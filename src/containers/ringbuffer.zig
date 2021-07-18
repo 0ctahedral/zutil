@@ -61,6 +61,24 @@ pub fn Ringbuffer(
 
             return ret;
         }
+
+        /// empties the buffer
+        pub fn clear(self: *Self) void {
+            self.head = 0;
+            self.tail = 0;
+            self.len = 0;
+        }
+
+        /// returns if the buffer is empty
+        pub fn empty(self: Self) bool {
+            return self.len == 0;
+        }
+
+        /// returns if the buffer is full
+        pub fn full(self: Self) bool {
+            return self.len == self.capacity;
+        }
+
     };
 }
 
@@ -81,6 +99,8 @@ test "push pop" {
 
     // cannot pop an empty buffer
     try testing.expect(rb.len == 0);
+    try testing.expect(rb.head == rb.tail);
+    try testing.expect(rb.empty());
     try testing.expect(rb.pop() == null);
 
     try rb.push(5);
@@ -93,6 +113,8 @@ test "push pop" {
         try rb.push(i);
     }
 
+    try testing.expect(rb.head == rb.tail);
+    try testing.expect(rb.full());
     try testing.expectError(error.BufferFull, rb.push(10));
 
     i = 0;
@@ -100,4 +122,23 @@ test "push pop" {
         try testing.expect(rb.pop() != null);
     }
     try testing.expect(rb.pop() == null);
+
+
+    while (i < rb.capacity) : (i += 1) {
+        try rb.push(i);
+    }
+    rb.clear();
+    try testing.expect(rb.empty());
+}
+
+test "different types" {
+    const vec = struct { x: f32 = 0, y: f32 = 0};
+
+    var rb = Ringbuffer(vec, 10).init();
+
+    try rb.push(.{});
+    try rb.push(.{.x = 10});
+
+    try testing.expect(rb.pop().?.x == 0);
+    try testing.expect(rb.pop().?.x == 10);
 }
