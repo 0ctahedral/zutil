@@ -84,7 +84,7 @@ pub fn readValue(reader: *std.fs.File.Reader) !u32 {
         val &= 0x7f;
         while (true) {
             n_byte = try reader.readByte();
-            val = (val << 7) | (n_byte& 0x7f);
+            val = (val << 7) | (n_byte & 0x7f);
 
             // break the loop
             if (n_byte & 0x80 == 0) break;
@@ -118,12 +118,12 @@ pub fn handleMeta(allocator: *std.mem.Allocator, reader: *std.fs.File.Reader, nt
         .TrackName => {
             var name = try readString(allocator, reader);
             defer allocator.free(name);
-            std.debug.warn("trackname {s}\n", .{name});
+            std.debug.warn("track name: {s}\n", .{name});
         },
         .InstrumentName => {
             var name = try readString(allocator, reader);
             defer allocator.free(name);
-            std.debug.warn("instrument {s}\n", .{name});
+            std.debug.warn("instrument: {s}\n", .{name});
         },
         .Lyrics => {
             var lyrics = try readString(allocator, reader);
@@ -133,17 +133,21 @@ pub fn handleMeta(allocator: *std.mem.Allocator, reader: *std.fs.File.Reader, nt
         .Marker => {
             var marker = try readString(allocator, reader);
             defer allocator.free(marker);
-            std.debug.warn("instrument {s}\n", .{marker});
+            std.debug.warn("instrument: {s}\n", .{marker});
         },
         .CuePoint => {
             var point = try readString(allocator, reader);
             defer allocator.free(point);
-            std.debug.warn("instrument {s}\n", .{point});
+            std.debug.warn("cue: {s}\n", .{point});
         },
         .ChannelPrefix => {
             std.debug.warn("channel prefix: {}\n", .{try reader.readByte()});
         },
-        .EndOfTrack => {std.debug.warn("end of track\n", .{}); return false;},
+        .EndOfTrack => {
+            std.debug.warn("end of track\n", .{});
+            _ = try reader.readByte();
+            return false;
+        },
         .SetTempo => {
             // tempo in ms per quarter note
             var tempo: u32 = 0;
@@ -185,18 +189,83 @@ pub fn handleMeta(allocator: *std.mem.Allocator, reader: *std.fs.File.Reader, nt
     return true;
 }
 
+pub fn readMidiEvent(reader: *std.fs.File.Reader, status: u8, p_status: u8) !u8 {
+    var prev_status = p_status;
+    if ((status & 0xf0) == @enumToInt(midiEvent.NoteOff)) {
+        prev_status = status;
+        const channel = status & 0x0f;
+        const id = try reader.readByte();
+        const vel = try reader.readByte();
+        std.debug.warn("noteOff: {} {} {}\n", .{channel, id, vel});
+    }
+
+    if ((status & 0xf0) == @enumToInt(midiEvent.NoteOn)) {
+        prev_status = status;
+        const channel = status & 0x0f;
+        const id = try reader.readByte();
+        const vel = try reader.readByte();
+        std.debug.warn("noteOn: {} {} {}\n", .{channel, id, vel});
+    }
+
+    if ((status & 0xf0) == @enumToInt(midiEvent.Aftertouch)) {
+        prev_status = status;
+        const channel = status & 0x0f;
+        const id = try reader.readByte();
+        const vel = try reader.readByte();
+        std.debug.warn("aftertouch: {} {} {}\n", .{channel, id, vel});
+    }
+
+    if ((status & 0xf0) == @enumToInt(midiEvent.ControlChange)) {
+        prev_status = status;
+        const channel = status & 0x0f;
+        const id = try reader.readByte();
+        const vel = try reader.readByte();
+        std.debug.warn("aftertouch: {} {} {}\n", .{channel, id, vel});
+    }
+
+    if ((status & 0xf0) == @enumToInt(midiEvent.ControlChange)) {
+        prev_status = status;
+        const channel = status & 0x0f;
+        const id = try reader.readByte();
+        const val = try reader.readByte();
+        std.debug.warn("control change: {} {} {}\n", .{channel, id, val});
+    }
+
+    if ((status & 0xf0) == @enumToInt(midiEvent.ProgramChange)) {
+        prev_status = status;
+        const channel = status & 0x0f;
+        const id = try reader.readByte();
+        std.debug.warn("program change: {} {}\n", .{channel, id});
+    }
+
+    if ((status & 0xf0) == @enumToInt(midiEvent.ChannelPressure)) {
+        prev_status = status;
+        const channel = status & 0x0f;
+        const pressure = try reader.readByte();
+        std.debug.warn("channel pressure: {} {}\n", .{channel, pressure});
+    }
+
+    if ((status & 0xf0) == @enumToInt(midiEvent.PitchBend)) {
+        prev_status = status;
+        const channel = status & 0x0f;
+        const lsb = @as(u32, try reader.readByte()) & 0x7f;
+        const msb = @as(u32, try reader.readByte()) & 0x7f;
+        std.debug.warn("pitch bend: {}\n", .{msb << 7 | lsb});
+    }
+
+    return prev_status;
+}
+
 test "header" {
     const file = try std.fs.cwd().openFile("test.mid", .{
         .read = true,
     });
     defer file.close();
 
-    var reader = &file.reader();
-
     try std.testing.expect(@sizeOf(fileHeader) == 14);
     try std.testing.expect(@sizeOf(trackHeader) == 8);
 
-    var header = try readfileHeader(reader);
+    var header = try readfileHeader(&file.reader());
 
     std.debug.warn("len {}\n", .{header.len});
     std.debug.warn("format {}\n", .{header.format});
@@ -204,42 +273,53 @@ test "header" {
     std.debug.warn("division {}\n", .{header.division});
 
     var i: usize = 0;
-    //while (i < header.chunks) : (i+=1) {
+    while (i < header.chunks) : (i+=1) {
+        std.debug.warn("new track =================\n", .{});
         // read track header
-    var track = try readtrackHeader(reader);
-    std.debug.warn("track_id {s}\n", .{@bitCast([4]u8, track.id)});
-    std.debug.warn("track_len {}\n", .{track.len});
+        var track = try readtrackHeader(&file.reader());
+        std.debug.warn("track_id {s}\n", .{@bitCast([4]u8, track.id)});
+        std.debug.warn("track_len {}\n", .{track.len});
 
+        var prev_status: u8 = 0;
 
-    while (true) {
-        var delta: u32 = 0;
-        var status: u8 = 0;
-        delta = try readValue(reader);
-        std.debug.warn("delta {}\n", .{delta});
-        status = try reader.readByte();
-        std.debug.warn("status {}\n", .{status});
+        while (true) {
+            var delta: u32 = 0;
+            var status: u8 = 0;
+            delta = readValue(&file.reader()) catch |e| {
+                break;
+            };
+            status = try file.reader().readByte();
 
-        var allocator = std.testing.allocator;
+            std.debug.warn("delta {}\n", .{delta});
 
-        // TODO: check if status has msb set
+            var allocator = std.testing.allocator;
 
-        if ((status & 0xf0) == @enumToInt(midiEvent.SystemExclusive)) {
-            std.debug.warn("system event\n", .{});
-            const ntype = try reader.readByte();
-            if (status == 0xff) {
-                if (!try handleMeta(allocator, reader, ntype))
-                    break;
+            // continuing last command without the extra status byte
+            if (status < 0x80) {
+                status = prev_status;
+                try file.seekBy(-1);
             }
 
-            if (status == 0xf0) {
-                std.debug.warn("system exclusive begin", .{});
-            }
+            prev_status = try readMidiEvent(&file.reader(), status, prev_status);
 
-            if (status == 0xf7) {
-                std.debug.warn("system exclusive begin", .{});
+            if ((status & 0xf0) == @enumToInt(midiEvent.SystemExclusive)) {
+                prev_status= 0;
+                if (status == 0xff) {
+                    const ntype = try file.reader().readByte();
+                    if (!try handleMeta(allocator, &file.reader(), ntype)) {
+                        break;
+                    }
+                }
+
+                if (status == 0xf0) {
+                    std.debug.warn("system exclusive begin", .{});
+                }
+
+                if (status == 0xf7) {
+                    std.debug.warn("system exclusive begin", .{});
+                }
             }
         }
+
     }
-    
-    //}
 }
