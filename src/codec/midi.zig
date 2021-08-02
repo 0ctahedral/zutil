@@ -13,18 +13,32 @@ const trackHeader = packed struct {
     len: u32,
 };
 
-const midiEvent = enum(u8) {
-    NoteOff = 0x80,
-    NoteOn = 0x90,
-    Aftertouch = 0xA0,
-    ControlChange = 0xB0,
-    ProgramChange = 0xC0,
-    ChannelPressure = 0xD0,
-    PitchBend = 0xE0,
-    SystemExclusive = 0xF0,
+const midiEventType = enum(u4) {
+    NoteOff = 0x8,
+    NoteOn = 0x9,
+    Aftertouch = 0xa,
+    ControlChange = 0xb,
+    ProgramChange = 0xc,
+    ChannelPressure = 0xd,
+    PitchBend = 0xe,
 };
 
-const metaEvent = enum(u8) {
+const systemEventType = enum(u8) {
+    SystemExclusive = 0xf0, // id: u7, data: []u8
+    EndSystemExclusive = 0xf7,
+    SongPosition = 0xf2, // position in beats lsb u7 msb u7
+    SongSelect = 0xf3, // song u7
+    TuneRequest = 0xf6, // song u7
+    TimingClock = 0xf8,
+    Start = 0xfa,
+    Continue = 0xfb,
+    Stop = 0xfc,
+    // ActiveSensing = 0xFE,
+    Reset = 0xff,
+    _,
+};
+
+const metaEventType = enum(u8) {
     Sequence = 0x00,
     Text = 0x01,
     Copyright = 0x02,
@@ -34,13 +48,78 @@ const metaEvent = enum(u8) {
     Marker = 0x06,
     CuePoint = 0x07,
     ChannelPrefix = 0x20,
-    EndOfTrack = 0x2F,
+    EndOfTrack = 0x2f,
     SetTempo = 0x51,
     SMPTEOffset = 0x54,
     TimeSignature = 0x58,
     KeySignature = 0x59,
-    SequencerSpecific = 0x7F,
+    SequencerSpecific = 0x7f,
 };
+
+const midiEvent = union(midiEventType) {
+    /// Note off event
+    /// Message sent when note is released
+    NoteOff: struct {
+        /// channel sent to
+        chan: u4,
+        /// id of the note
+        id: u7,
+        /// velocity of the note
+        vel:u7,
+    },
+    /// Note on event
+    /// Message sent when note is released
+    NoteOn: struct {
+        /// channel sent to
+        chan: u4,
+        /// id of the note
+        id: u7,
+        /// velocity of the note
+        vel:u7,
+    },
+    /// Message sent when a key is pressed after bottoming out
+    Aftertouch: struct {
+        /// channel sent to
+        chan: u4,
+        /// id of the note
+        id: u7,
+        /// velocity of the note
+        vel:u7,
+    },
+    /// Message sent when a controller value is changed
+    ControlChange: struct {
+        /// channel sent to
+        chan: u4,
+        /// controller number
+        num: u7,
+        /// new value for controller
+        val: u7,
+    },
+    /// Message sent when the patch number changes
+    ProgramChange: struct {
+        /// channel sent to
+        chan: u4,
+        /// new program number
+        num: u7
+    },
+    /// highest velocity of all pressed keys
+    ChannelPressure: struct {
+        /// channel sent to
+        chan: u4,
+        /// velocity
+        vel: u7,
+    },
+    /// When the pitch wheel is used
+    PitchBend: struct {
+        /// channel sent to
+        chan: u4,
+        /// least significant 7 bits
+        lsb: u7,
+        /// most significant 7 bits
+        msb: u7,
+    },
+};
+
 
 pub fn readfileHeader(reader: *std.fs.File.Reader) !fileHeader {
     var buf: [@sizeOf(fileHeader)]u8 = undefined;
@@ -103,7 +182,7 @@ pub fn readString(allocator: *std.mem.Allocator, reader: *std.fs.File.Reader) ![
 
 /// returns false if the track has ended
 pub fn handleMeta(allocator: *std.mem.Allocator, reader: *std.fs.File.Reader, ntype: u8) !bool {
-    switch (@intToEnum(metaEvent, ntype)) {
+    switch (@intToEnum(metaEventType, ntype)) {
         .Sequence => std.debug.warn("sequence\n", .{}),
         .Text => {
             var text = try readString(allocator, reader);
@@ -189,71 +268,84 @@ pub fn handleMeta(allocator: *std.mem.Allocator, reader: *std.fs.File.Reader, nt
     return true;
 }
 
-pub fn readMidiEvent(reader: *std.fs.File.Reader, status: u8, p_status: u8) !u8 {
+pub fn readMidiEvent(reader: *std.fs.File.Reader, status: u8, p_status: u8) !?midiEvent {
     var prev_status = p_status;
-    if ((status & 0xf0) == @enumToInt(midiEvent.NoteOff)) {
-        prev_status = status;
-        const channel = status & 0x0f;
-        const id = try reader.readByte();
-        const vel = try reader.readByte();
-        std.debug.warn("noteOff: {} {} {}\n", .{channel, id, vel});
-    }
 
-    if ((status & 0xf0) == @enumToInt(midiEvent.NoteOn)) {
-        prev_status = status;
-        const channel = status & 0x0f;
-        const id = try reader.readByte();
-        const vel = try reader.readByte();
-        std.debug.warn("noteOn: {} {} {}\n", .{channel, id, vel});
-    }
-
-    if ((status & 0xf0) == @enumToInt(midiEvent.Aftertouch)) {
-        prev_status = status;
-        const channel = status & 0x0f;
-        const id = try reader.readByte();
-        const vel = try reader.readByte();
-        std.debug.warn("aftertouch: {} {} {}\n", .{channel, id, vel});
-    }
-
-    if ((status & 0xf0) == @enumToInt(midiEvent.ControlChange)) {
-        prev_status = status;
-        const channel = status & 0x0f;
-        const id = try reader.readByte();
-        const vel = try reader.readByte();
-        std.debug.warn("aftertouch: {} {} {}\n", .{channel, id, vel});
-    }
-
-    if ((status & 0xf0) == @enumToInt(midiEvent.ControlChange)) {
-        prev_status = status;
-        const channel = status & 0x0f;
-        const id = try reader.readByte();
-        const val = try reader.readByte();
-        std.debug.warn("control change: {} {} {}\n", .{channel, id, val});
-    }
+    // break off event and channel
+    var channel: u4 = @truncate(u4, status);
+    //var mtype = @intToEnum(midiEventType, @truncate(u4, status >> 4));
+    var mtype = @truncate(u4, status >> 4);
+    const ret: ?midiEvent = switch (mtype) {
+        @enumToInt(midiEventType.NoteOff) => .{
+                .NoteOff = .{
+                    .chan = channel,
+                    .id = @truncate(u7, try reader.readByte()),
+                    .vel = @truncate(u7, try reader.readByte()),
+                },
+        },
+        @enumToInt(midiEventType.NoteOn) => .{
+                .NoteOn = .{
+                    .chan = channel,
+                    .id = @truncate(u7, try reader.readByte()),
+                    .vel = @truncate(u7, try reader.readByte()),
+                },
+        },
+        @enumToInt(midiEventType.Aftertouch) => .{
+                .Aftertouch = .{
+                    .chan = channel,
+                    .id = @truncate(u7, try reader.readByte()),
+                    .vel = @truncate(u7, try reader.readByte()),
+                },
+        },
+        @enumToInt(midiEventType.ControlChange) => .{
+                .ControlChange = .{
+                    .chan = channel,
+                    .num = @truncate(u7, try reader.readByte()),
+                    .val = @truncate(u7, try reader.readByte()),
+                },
+        },
+        @enumToInt(midiEventType.ProgramChange) => .{
+                .ProgramChange = .{
+                    .chan = channel,
+                    .num = @truncate(u7, try reader.readByte()),
+                },
+        },
+        @enumToInt(midiEventType.ChannelPressure) => .{
+                .ChannelPressure = .{
+                    .chan = channel,
+                    .vel = @truncate(u7, try reader.readByte()),
+                },
+        },
+        @enumToInt(midiEventType.PitchBend) => .{
+                .PitchBend = .{
+                    .chan = channel,
+                    .lsb = @truncate(u7, try reader.readByte()),
+                    .msb = @truncate(u7, try reader.readByte()),
+                },
+        },
+        else => null,
+    };
 
     if ((status & 0xf0) == @enumToInt(midiEvent.ProgramChange)) {
         prev_status = status;
-        const channel = status & 0x0f;
         const id = try reader.readByte();
         std.debug.warn("program change: {} {}\n", .{channel, id});
     }
 
     if ((status & 0xf0) == @enumToInt(midiEvent.ChannelPressure)) {
         prev_status = status;
-        const channel = status & 0x0f;
         const pressure = try reader.readByte();
         std.debug.warn("channel pressure: {} {}\n", .{channel, pressure});
     }
 
     if ((status & 0xf0) == @enumToInt(midiEvent.PitchBend)) {
         prev_status = status;
-        const channel = status & 0x0f;
         const lsb = @as(u32, try reader.readByte()) & 0x7f;
         const msb = @as(u32, try reader.readByte()) & 0x7f;
         std.debug.warn("pitch bend: {}\n", .{msb << 7 | lsb});
     }
 
-    return prev_status;
+    return ret;
 }
 
 test "header" {
@@ -294,22 +386,30 @@ test "header" {
 
             var allocator = std.testing.allocator;
 
-            // continuing last command without the extra status byte
+            // if first bit is not set then we are continuing the last command
             if (status < 0x80) {
                 status = prev_status;
                 try file.seekBy(-1);
             }
 
-            prev_status = try readMidiEvent(&file.reader(), status, prev_status);
-
-            if ((status & 0xf0) == @enumToInt(midiEvent.SystemExclusive)) {
-                prev_status= 0;
-                if (status == 0xff) {
-                    const ntype = try file.reader().readByte();
-                    if (!try handleMeta(allocator, &file.reader(), ntype)) {
-                        break;
-                    }
+            // we know it's a meta event
+            if (status == 0xff) {
+                // TODO: data rep for meta
+                const ntype = try file.reader().readByte();
+                if (!try handleMeta(allocator, &file.reader(), ntype)) {
+                    break;
                 }
+            }
+
+            // read a midi event
+
+            if (try readMidiEvent(&file.reader(), status, prev_status)) |e| {
+                prev_status = status;
+                std.debug.warn("{}\n", .{e});
+            }
+
+            if ((status & 0xf0) == @enumToInt(systemEventType.SystemExclusive)) {
+                prev_status= 0;
 
                 if (status == 0xf0) {
                     std.debug.warn("system exclusive begin", .{});
