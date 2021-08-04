@@ -56,7 +56,80 @@ const metaEventType = enum(u8) {
     SequencerSpecific = 0x7f,
 };
 
-const midiEvent = union(midiEventType) {
+const metaEvent = union(metaEventType) {
+    Sequence: struct { len: u8 = 0, },
+    Text: struct {
+        /// length of string
+        len: u8,
+    },
+    Copyright: struct {
+        /// length of string
+        len: u8,
+    },
+    TrackName: struct {
+        /// length of string
+        len: u8,
+    },
+    InstrumentName: struct {
+        /// length of string
+        len: u8,
+    },
+    Lyrics: struct {
+        /// length of string
+        len: u8,
+    },
+    Marker: struct {
+        /// length of string
+        len: u8,
+    },
+    CuePoint: struct {
+        /// length of string
+        len: u8,
+    },
+    ChannelPrefix: struct {
+        /// discard bit after
+        chan: u8,
+    },
+    /// discard bit after
+    EndOfTrack: struct { },
+    /// Set the tempo
+    SetTempo: struct {
+        tempo: u32,
+    },
+    /// 
+    SMPTEOffset: struct {
+        /// hour
+        h: u8,
+        /// minute
+        m: u8,
+        /// second
+        s: u8,
+        /// fractional frames
+        fr: u8,
+        /// fractional frames
+        ff: u8,
+    },
+    TimeSignature: struct {
+        /// numerator
+        n: u8,
+        // TODO: shift since denom is ^-2
+        /// denominator
+        d: u8,
+        /// midi clock per metronome tick
+        cpt: u8,
+        /// 32nd notes per quarter note
+        npq: u8,
+    },
+    KeySignature: struct {
+        signature: u8,
+        minor: u8,
+    },
+    SequencerSpecific: struct {
+        len: u8,
+    },
+};
+
+const Event = union(midiEventType) {
     /// Note off event
     /// Message sent when note is released
     NoteOff: struct {
@@ -182,168 +255,215 @@ pub fn readString(allocator: *std.mem.Allocator, reader: *std.fs.File.Reader) ![
 
 /// returns false if the track has ended
 pub fn handleMeta(allocator: *std.mem.Allocator, reader: *std.fs.File.Reader, ntype: u8) !bool {
-    switch (@intToEnum(metaEventType, ntype)) {
-        .Sequence => std.debug.warn("sequence\n", .{}),
-        .Text => {
-            var text = try readString(allocator, reader);
-            defer allocator.free(text);
-            std.debug.warn("text: {s}\n", .{text});
-        },
-        .Copyright => {
-            var text = try readString(allocator, reader);
-            defer allocator.free(text);
-            std.debug.warn("copy: {s}\n", .{text});
-        },
-        .TrackName => {
-            var name = try readString(allocator, reader);
-            defer allocator.free(name);
-            std.debug.warn("track name: {s}\n", .{name});
-        },
-        .InstrumentName => {
-            var name = try readString(allocator, reader);
-            defer allocator.free(name);
-            std.debug.warn("instrument: {s}\n", .{name});
-        },
-        .Lyrics => {
-            var lyrics = try readString(allocator, reader);
-            defer allocator.free(lyrics);
-            std.debug.warn("lyrics {s}\n", .{lyrics});
-        },
-        .Marker => {
-            var marker = try readString(allocator, reader);
-            defer allocator.free(marker);
-            std.debug.warn("instrument: {s}\n", .{marker});
-        },
-        .CuePoint => {
-            var point = try readString(allocator, reader);
-            defer allocator.free(point);
-            std.debug.warn("cue: {s}\n", .{point});
-        },
-        .ChannelPrefix => {
-            std.debug.warn("channel prefix: {}\n", .{try reader.readByte()});
-        },
-        .EndOfTrack => {
-            std.debug.warn("end of track\n", .{});
-            _ = try reader.readByte();
-            return false;
-        },
-        .SetTempo => {
-            // tempo in ms per quarter note
-            var tempo: u32 = 0;
-            tempo |= @as(u32, try reader.readByte()) << 16;
-            tempo |= @as(u32, try reader.readByte()) << 8;
-            tempo |= @as(u32, try reader.readByte()) << 0;
+    const ret: ?metaEvent = blk: {
+        switch (@intToEnum(metaEventType, ntype)) {
+            .Sequence => break :blk .{
+                .Sequence = .{}
+            },
+            .Text => {
+                const len = try reader.readByte();
+                try reader.skipBytes(len, .{});
+                break :blk .{
+                    .Text = .{
+                        .len = len,
+                    }
+                };
+            },
+            .Copyright => {
+                const len = try reader.readByte();
+                try reader.skipBytes(len, .{});
+                break :blk .{
+                    .Copyright = .{
+                        .len = len,
+                    }
+                };
+            },
+            .TrackName => {
+                const len = try reader.readByte();
+                try reader.skipBytes(len, .{});
+                break :blk .{
+                    .TrackName = .{
+                        .len = len,
+                    }
+                };
+            },
+            .InstrumentName => {
+                const len = try reader.readByte();
+                try reader.skipBytes(len, .{});
+                break :blk .{
+                    .TrackName = .{
+                        .len = len,
+                    }
+                };
+            },
+            .Lyrics => {
+                const len = try reader.readByte();
+                try reader.skipBytes(len, .{});
+                break :blk .{
+                    .Lyrics = .{
+                        .len = len,
+                    }
+                };
+            },
+            .Marker => {
+                const len = try reader.readByte();
+                try reader.skipBytes(len, .{});
+                break :blk .{
+                    .Marker = .{
+                        .len = len,
+                    }
+                };
+            },
+            .CuePoint => {
+                const len = try reader.readByte();
+                try reader.skipBytes(len, .{});
+                break :blk .{
+                    .CuePoint = .{
+                        .len = len,
+                    }
+                };
+            },
+            .ChannelPrefix => {
+                break :blk .{
+                    .ChannelPrefix = .{
+                        .chan = try reader.readByte(),
+                    }
+                };
+            },
+            .EndOfTrack => {
+                std.debug.warn("end of track\n", .{});
+                _ = try reader.readByte();
+                return false;
+            },
+            .SetTempo => {
+                // tempo in ms per quarter note
+                var tempo: u32 = 0;
+                tempo |= @as(u32, try reader.readByte()) << 16;
+                tempo |= @as(u32, try reader.readByte()) << 8;
+                tempo |= @as(u32, try reader.readByte()) << 0;
 
-            // convert to bpm
-            const bpm: f32 = 60000000 / @intToFloat(f32, tempo);
+                // convert to bpm
+                const bpm: f32 = 60000000 / @intToFloat(f32, tempo);
 
-            std.debug.warn("tempo (bpm): {}\n", .{bpm});
-        },
-        .SMPTEOffset => {
-            const h = try reader.readByte();
-            const m = try reader.readByte();
-            const s = try reader.readByte();
-            std.debug.warn("smpte h: {} m: {} s: {}\n", .{h, m, s});
-        },
-        .TimeSignature => {
-            // numerator
-            const n = try reader.readByte();
-            // TODO: shift since denom is ^-2
-            var d = try reader.readByte();
-            // midi ticks in a metronome tick
-            const cpt = try reader.readByte();
-            // 32nd notes per quarter note
-            const perQ = try reader.readByte();
-            std.debug.warn("time signature: {}/{}\n", .{n, d});
-            std.debug.warn("clocks per tick: {}\n", .{cpt});
-            std.debug.warn("32nd notes per beat: {}\n", .{perQ});
-        },
-        .KeySignature => {
-            std.debug.warn("key signature {}\n", .{try reader.readByte()});
-            std.debug.warn("minor key {}\n", .{try reader.readByte()});
-        },
-        .SequencerSpecific => std.debug.warn("sequencer specific: {s}\n", .{try readString(allocator, reader)}),
-    }
+                std.debug.warn("tempo (bpm): {}\n", .{bpm});
+                break :blk .{
+                    .SetTempo = .{
+                        .tempo = tempo,
+                    }
+                };
+            },
+            .SMPTEOffset => {
+                break :blk .{
+                    .SMPTEOffset = .{
+                        .h = try reader.readByte(),
+                        .m = try reader.readByte(),
+                        .s = try reader.readByte(),
+                        .fr = try reader.readByte(),
+                        .ff = try reader.readByte(),
+                    }
+                };
+            },
+            .TimeSignature => {
+                // numerator
+                const n = try reader.readByte();
+                // TODO: shift since denom is ^-2
+                var d = try reader.readByte();
+                // midi ticks in a metronome tick
+                const cpt = try reader.readByte();
+                // 32nd notes per quarter note
+                const perQ = try reader.readByte();
+                std.debug.warn("time signature: {}/{}\n", .{n, d});
+                std.debug.warn("clocks per tick: {}\n", .{cpt});
+                std.debug.warn("32nd notes per beat: {}\n", .{perQ});
+                break :blk .{
+                    .TimeSignature = .{
+                        .n = n,
+                        .d = d,
+                        .cpt = cpt,
+                        .npq = perQ,
+                    }
+                };
+            },
+            .KeySignature => {
+                break :blk .{
+                    .KeySignature = .{
+                        .signature = try reader.readByte(),
+                        .minor = try reader.readByte(),
+                    }
+                };
+            },
+            .SequencerSpecific => {
+                const len = try reader.readByte();
+                try reader.skipBytes(len, .{});
+                break :blk .{
+                    .CuePoint = .{
+                        .len = len,
+                    }
+                };
+            },
+        }
+    };
 
-    return true;
+    return !(ret == null);
 }
 
-pub fn readMidiEvent(reader: *std.fs.File.Reader, status: u8, p_status: u8) !?midiEvent {
+pub fn readMidiEvent(reader: *std.fs.File.Reader, status: u8, p_status: u8) !?Event {
     var prev_status = p_status;
 
     // break off event and channel
     var channel: u4 = @truncate(u4, status);
     //var mtype = @intToEnum(midiEventType, @truncate(u4, status >> 4));
     var mtype = @truncate(u4, status >> 4);
-    const ret: ?midiEvent = switch (mtype) {
+    const ret: ?Event = switch (mtype) {
         @enumToInt(midiEventType.NoteOff) => .{
-                .NoteOff = .{
-                    .chan = channel,
-                    .id = @truncate(u7, try reader.readByte()),
-                    .vel = @truncate(u7, try reader.readByte()),
-                },
-        },
+            .NoteOff = .{
+                .chan = channel,
+                .id = @truncate(u7, try reader.readByte()),
+                .vel = @truncate(u7, try reader.readByte()),
+            },
+            },
         @enumToInt(midiEventType.NoteOn) => .{
-                .NoteOn = .{
-                    .chan = channel,
-                    .id = @truncate(u7, try reader.readByte()),
-                    .vel = @truncate(u7, try reader.readByte()),
-                },
-        },
+            .NoteOn = .{
+                .chan = channel,
+                .id = @truncate(u7, try reader.readByte()),
+                .vel = @truncate(u7, try reader.readByte()),
+            },
+            },
         @enumToInt(midiEventType.Aftertouch) => .{
-                .Aftertouch = .{
-                    .chan = channel,
-                    .id = @truncate(u7, try reader.readByte()),
-                    .vel = @truncate(u7, try reader.readByte()),
-                },
-        },
+            .Aftertouch = .{
+                .chan = channel,
+                .id = @truncate(u7, try reader.readByte()),
+                .vel = @truncate(u7, try reader.readByte()),
+            },
+            },
         @enumToInt(midiEventType.ControlChange) => .{
-                .ControlChange = .{
-                    .chan = channel,
-                    .num = @truncate(u7, try reader.readByte()),
-                    .val = @truncate(u7, try reader.readByte()),
-                },
-        },
+            .ControlChange = .{
+                .chan = channel,
+                .num = @truncate(u7, try reader.readByte()),
+                .val = @truncate(u7, try reader.readByte()),
+            },
+            },
         @enumToInt(midiEventType.ProgramChange) => .{
-                .ProgramChange = .{
-                    .chan = channel,
-                    .num = @truncate(u7, try reader.readByte()),
-                },
-        },
+            .ProgramChange = .{
+                .chan = channel,
+                .num = @truncate(u7, try reader.readByte()),
+            },
+            },
         @enumToInt(midiEventType.ChannelPressure) => .{
-                .ChannelPressure = .{
-                    .chan = channel,
-                    .vel = @truncate(u7, try reader.readByte()),
-                },
-        },
+            .ChannelPressure = .{
+                .chan = channel,
+                .vel = @truncate(u7, try reader.readByte()),
+            },
+            },
         @enumToInt(midiEventType.PitchBend) => .{
-                .PitchBend = .{
-                    .chan = channel,
-                    .lsb = @truncate(u7, try reader.readByte()),
-                    .msb = @truncate(u7, try reader.readByte()),
-                },
-        },
+            .PitchBend = .{
+                .chan = channel,
+                .lsb = @truncate(u7, try reader.readByte()),
+                .msb = @truncate(u7, try reader.readByte()),
+            },
+            },
         else => null,
     };
-
-    if ((status & 0xf0) == @enumToInt(midiEvent.ProgramChange)) {
-        prev_status = status;
-        const id = try reader.readByte();
-        std.debug.warn("program change: {} {}\n", .{channel, id});
-    }
-
-    if ((status & 0xf0) == @enumToInt(midiEvent.ChannelPressure)) {
-        prev_status = status;
-        const pressure = try reader.readByte();
-        std.debug.warn("channel pressure: {} {}\n", .{channel, pressure});
-    }
-
-    if ((status & 0xf0) == @enumToInt(midiEvent.PitchBend)) {
-        prev_status = status;
-        const lsb = @as(u32, try reader.readByte()) & 0x7f;
-        const msb = @as(u32, try reader.readByte()) & 0x7f;
-        std.debug.warn("pitch bend: {}\n", .{msb << 7 | lsb});
-    }
 
     return ret;
 }
