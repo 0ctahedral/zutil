@@ -12,7 +12,7 @@ pub fn build(b: *Builder) void {
     // api tests
     const test_step = b.addTest("tests/tests.zig");
     // add the packages we are declaring
-    test_step.addPackagePath("util", "src/util.zig");
+    test_step.addPackagePath("zutil", "src/zutil.zig");
     test_step.setBuildMode(build_mode);
 
     const test_cmd = b.step("test", "Test the library");
