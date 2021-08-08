@@ -1,4 +1,5 @@
 const std = @import("std");
+usingnamespace @import("events.zig");
 
 const fileHeader = packed struct {
     id: u32,
@@ -12,187 +13,6 @@ const trackHeader = packed struct {
     id: u32,
     len: u32,
 };
-
-const midiEventType = enum(u4) {
-    NoteOff = 0x8,
-    NoteOn = 0x9,
-    Aftertouch = 0xa,
-    ControlChange = 0xb,
-    ProgramChange = 0xc,
-    ChannelPressure = 0xd,
-    PitchBend = 0xe,
-};
-
-const systemEventType = enum(u8) {
-    SystemExclusive = 0xf0, // id: u7, data: []u8
-    EndSystemExclusive = 0xf7,
-    SongPosition = 0xf2, // position in beats lsb u7 msb u7
-    SongSelect = 0xf3, // song u7
-    TuneRequest = 0xf6, // song u7
-    TimingClock = 0xf8,
-    Start = 0xfa,
-    Continue = 0xfb,
-    Stop = 0xfc,
-    // ActiveSensing = 0xFE,
-    Reset = 0xff,
-    _,
-};
-
-const metaEventType = enum(u8) {
-    Sequence = 0x00,
-    Text = 0x01,
-    Copyright = 0x02,
-    TrackName = 0x03,
-    InstrumentName = 0x04,
-    Lyrics = 0x05,
-    Marker = 0x06,
-    CuePoint = 0x07,
-    ChannelPrefix = 0x20,
-    EndOfTrack = 0x2f,
-    SetTempo = 0x51,
-    SMPTEOffset = 0x54,
-    TimeSignature = 0x58,
-    KeySignature = 0x59,
-    SequencerSpecific = 0x7f,
-};
-
-const metaEvent = union(metaEventType) {
-    Sequence: struct { len: u8 = 0, },
-    Text: struct {
-        /// length of string
-        len: u8,
-    },
-    Copyright: struct {
-        /// length of string
-        len: u8,
-    },
-    TrackName: struct {
-        /// length of string
-        len: u8,
-    },
-    InstrumentName: struct {
-        /// length of string
-        len: u8,
-    },
-    Lyrics: struct {
-        /// length of string
-        len: u8,
-    },
-    Marker: struct {
-        /// length of string
-        len: u8,
-    },
-    CuePoint: struct {
-        /// length of string
-        len: u8,
-    },
-    ChannelPrefix: struct {
-        /// discard bit after
-        chan: u8,
-    },
-    /// discard bit after
-    EndOfTrack: struct { },
-    /// Set the tempo
-    SetTempo: struct {
-        tempo: u32,
-    },
-    /// 
-    SMPTEOffset: struct {
-        /// hour
-        h: u8,
-        /// minute
-        m: u8,
-        /// second
-        s: u8,
-        /// fractional frames
-        fr: u8,
-        /// fractional frames
-        ff: u8,
-    },
-    TimeSignature: struct {
-        /// numerator
-        n: u8,
-        // TODO: shift since denom is ^-2
-        /// denominator
-        d: u8,
-        /// midi clock per metronome tick
-        cpt: u8,
-        /// 32nd notes per quarter note
-        npq: u8,
-    },
-    KeySignature: struct {
-        signature: u8,
-        minor: u8,
-    },
-    SequencerSpecific: struct {
-        len: u8,
-    },
-};
-
-const Event = union(midiEventType) {
-    /// Note off event
-    /// Message sent when note is released
-    NoteOff: struct {
-        /// channel sent to
-        chan: u4,
-        /// id of the note
-        id: u7,
-        /// velocity of the note
-        vel:u7,
-    },
-    /// Note on event
-    /// Message sent when note is released
-    NoteOn: struct {
-        /// channel sent to
-        chan: u4,
-        /// id of the note
-        id: u7,
-        /// velocity of the note
-        vel:u7,
-    },
-    /// Message sent when a key is pressed after bottoming out
-    Aftertouch: struct {
-        /// channel sent to
-        chan: u4,
-        /// id of the note
-        id: u7,
-        /// velocity of the note
-        vel:u7,
-    },
-    /// Message sent when a controller value is changed
-    ControlChange: struct {
-        /// channel sent to
-        chan: u4,
-        /// controller number
-        num: u7,
-        /// new value for controller
-        val: u7,
-    },
-    /// Message sent when the patch number changes
-    ProgramChange: struct {
-        /// channel sent to
-        chan: u4,
-        /// new program number
-        num: u7
-    },
-    /// highest velocity of all pressed keys
-    ChannelPressure: struct {
-        /// channel sent to
-        chan: u4,
-        /// velocity
-        vel: u7,
-    },
-    /// When the pitch wheel is used
-    PitchBend: struct {
-        /// channel sent to
-        chan: u4,
-        /// least significant 7 bits
-        lsb: u7,
-        /// most significant 7 bits
-        msb: u7,
-    },
-};
-
 
 pub fn readfileHeader(reader: *std.fs.File.Reader) !fileHeader {
     var buf: [@sizeOf(fileHeader)]u8 = undefined;
@@ -254,8 +74,8 @@ pub fn readString(allocator: *std.mem.Allocator, reader: *std.fs.File.Reader) ![
 }
 
 /// returns false if the track has ended
-pub fn handleMeta(allocator: *std.mem.Allocator, reader: *std.fs.File.Reader, ntype: u8) !bool {
-    const ret: ?metaEvent = blk: {
+pub fn handleMeta(allocator: *std.mem.Allocator, reader: *std.fs.File.Reader, ntype: u8) !metaEvent {
+    const ret: metaEvent = blk: {
         switch (@intToEnum(metaEventType, ntype)) {
             .Sequence => break :blk .{
                 .Sequence = .{}
@@ -331,9 +151,11 @@ pub fn handleMeta(allocator: *std.mem.Allocator, reader: *std.fs.File.Reader, nt
                 };
             },
             .EndOfTrack => {
-                std.debug.warn("end of track\n", .{});
+                //std.debug.warn("end of track\n", .{});
                 _ = try reader.readByte();
-                return false;
+                break :blk .{
+                    .EndOfTrack=.{}
+                };
             },
             .SetTempo => {
                 // tempo in ms per quarter note
@@ -404,7 +226,7 @@ pub fn handleMeta(allocator: *std.mem.Allocator, reader: *std.fs.File.Reader, nt
         }
     };
 
-    return !(ret == null);
+    return ret;
 }
 
 pub fn readMidiEvent(reader: *std.fs.File.Reader, status: u8, p_status: u8) !?Event {
@@ -469,7 +291,7 @@ pub fn readMidiEvent(reader: *std.fs.File.Reader, status: u8, p_status: u8) !?Ev
 }
 
 test "header" {
-    const file = try std.fs.cwd().openFile("./test/test.mid", .{
+    const file = try std.fs.cwd().openFile("./test.mid", .{
         .read = true,
     });
     defer file.close();
@@ -489,10 +311,13 @@ test "header" {
         std.debug.warn("new track =================\n", .{});
         // read track header
         var track = try readtrackHeader(&file.reader());
+        var events: usize = 0;
         std.debug.warn("track_id {s}\n", .{@bitCast([4]u8, track.id)});
         std.debug.warn("track_len {}\n", .{track.len});
 
         var prev_status: u8 = 0;
+
+        var allocator = std.testing.allocator;
 
         while (true) {
             var delta: u32 = 0;
@@ -504,7 +329,6 @@ test "header" {
 
             std.debug.warn("delta {}\n", .{delta});
 
-            var allocator = std.testing.allocator;
 
             // if first bit is not set then we are continuing the last command
             if (status < 0x80) {
@@ -516,9 +340,10 @@ test "header" {
             if (status == 0xff) {
                 // TODO: data rep for meta
                 const ntype = try file.reader().readByte();
-                if (!try handleMeta(allocator, &file.reader(), ntype)) {
+                const me = try handleMeta(allocator, &file.reader(), ntype);
+                std.debug.warn("{}\n", .{me});
+                if (me == .EndOfTrack)
                     break;
-                }
             }
 
             // read a midi event
@@ -539,7 +364,9 @@ test "header" {
                     std.debug.warn("system exclusive begin", .{});
                 }
             }
+            events += 1;
         }
+        std.debug.warn("num events: {}", .{events});
 
     }
 }
