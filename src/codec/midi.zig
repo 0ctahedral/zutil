@@ -469,7 +469,7 @@ pub fn readMidiEvent(reader: *std.fs.File.Reader, status: u8, p_status: u8) !?Ev
 }
 
 test "header" {
-    const file = try std.fs.cwd().openFile("test.mid", .{
+    const file = try std.fs.cwd().openFile("./test/test.mid", .{
         .read = true,
     });
     defer file.close();
