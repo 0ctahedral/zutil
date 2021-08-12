@@ -1,6 +1,17 @@
 const std = @import("std");
 usingnamespace @import("events.zig");
 
+pub const MidiNote = enum {
+    /// what note is being pressed
+    id: u8,
+    /// how hard the note is being pressed
+    vel: u8,
+    /// the start time of the note
+    start: f32,
+    /// the duration of the note
+    duration: f32,
+};
+
 const fileHeader = packed struct {
     id: u32,
     len: u32,
