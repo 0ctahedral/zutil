@@ -1,4 +1,7 @@
 // import all tests in the folder and run em
 test "test suite" {
-    //_ = @import
+    const zutil = @import("zutil");
+
+    _ = zutil.containers.Ref;
+    //_ = zutil.containers.RingBuffer;
 }
