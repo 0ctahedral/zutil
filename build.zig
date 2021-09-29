@@ -12,10 +12,17 @@ pub fn build(b: *Builder) void {
     // api tests
     const test_step = b.addTest("tests/tests.zig");
     // add the packages we are declaring
-    test_step.addPackagePath("zutil", "src/zutil.zig");
+    addZutil(test_step, "./");
     test_step.setBuildMode(build_mode);
 
     const test_cmd = b.step("test", "Test the library");
     test_cmd.dependOn(&internal_test_step.step);
     test_cmd.dependOn(&test_step.step);
+}
+
+pub fn addZutil(
+    artifact: *std.build.LibExeObjStep,
+    comptime prefix_path: []const u8,
+) void {
+    artifact.addPackagePath("zutil", prefix_path ++ "src/zutil.zig");
 }
