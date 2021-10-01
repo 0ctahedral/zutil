@@ -53,14 +53,14 @@ pub fn Ref(comptime T: type) type {
         }
 
         /// returns a const pointer to the value stored in this Ref
-        pub fn ptr(self: *Self) *const T {
+        pub fn ptr(self: Self) *const T {
             return &self.inner.*.val;
         }
 
         /// returns an unsafe, mutable pointer to this value.
         /// this should only be used if there is one owner of
         /// this reference
-        pub fn rawPtr(self: *Self) *T {
+        pub fn rawPtr(self: Self) *T {
             return &self.inner.*.val;
         }
 
