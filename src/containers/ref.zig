@@ -21,7 +21,7 @@ pub fn Ref(comptime T: type) type {
         inner: *Ptr,
 
         /// allocates a new strong reference given the value v
-        fn new(allocator: *Allocator, v: T) !Self {
+        pub fn new(allocator: *Allocator, v: T) !Self {
             // allocate the inner
             const n_inner = try allocator.create(Ptr);
             n_inner.* = Ptr{
@@ -37,7 +37,7 @@ pub fn Ref(comptime T: type) type {
         /// Destroy the allocated inner counter and value
         /// if this is the only reference.
         /// Otherwise, we just decrement the counter
-        fn deinit(self: Self, allocator: *Allocator) void {
+        pub fn deinit(self: Self, allocator: *Allocator) void {
             const c = dec(self.inner);
             if (c == 1) {
                 allocator.destroy(self.inner);
@@ -45,7 +45,7 @@ pub fn Ref(comptime T: type) type {
         }
 
         /// create a new strong reference to the value shared in here
-        fn clone(self: Self) Self {
+        pub fn clone(self: Self) Self {
             _ = inc(self.inner);
             return Self{
                 .inner = self.inner,
@@ -53,19 +53,19 @@ pub fn Ref(comptime T: type) type {
         }
 
         /// returns a const pointer to the value stored in this Ref
-        fn ptr(self: *Self) *const T {
+        pub fn ptr(self: *Self) *const T {
             return &self.inner.*.val;
         }
 
         /// returns an unsafe, mutable pointer to this value.
         /// this should only be used if there is one owner of
         /// this reference
-        fn rawPtr(self: *Self) *T {
+        pub fn rawPtr(self: *Self) *T {
             return &self.inner.*.val;
         }
 
         /// Get the number of references to this data
-        inline fn count(self: Self) usize {
+        pub inline fn count(self: Self) usize {
             return @atomicLoad(usize, &self.inner.*.count, .SeqCst);
         }
 
