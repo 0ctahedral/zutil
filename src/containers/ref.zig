@@ -11,6 +11,15 @@ pub fn Ref(comptime T: type) type {
         val: T,
         /// number of strong references to this pointer
         count: usize,
+
+        fn deinit(self: @This()) void {
+            if (@typeInfo(T) != .Struct)
+                return;
+
+            if (@hasDecl(T, "deinit")) {
+                self.val.deinit();
+            }
+        }
     };
 
     // Returns a strong reference to the inner value
@@ -40,6 +49,7 @@ pub fn Ref(comptime T: type) type {
         pub fn deinit(self: Self, allocator: *Allocator) void {
             const c = dec(self.inner);
             if (c == 1) {
+                self.inner.deinit();
                 allocator.destroy(self.inner);
             }
         }
@@ -99,6 +109,19 @@ test "init" {
 
     // test that the count is 1
     try expect(p.inner.*.count == 1);
+}
+
+test "deinit" {
+    const t = struct {
+        x: u8 = 0,
+
+        pub fn deinit(self: @This()) void {
+            std.debug.warn("deinit called\n", .{});
+        }
+    };
+    const allocator = std.testing.allocator;
+    const p = try Ref(t).new(allocator, t{});
+    defer p.deinit(allocator);
 }
 
 test "clone and deinit" {
